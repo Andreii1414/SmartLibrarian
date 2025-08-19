@@ -4,17 +4,9 @@ from openai import OpenAI
 
 _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
-def generate_book_image(title: str, summary: str, size: str = "512x512") -> str:
+def generate_book_image(title: str, size: str = "512x512") -> str:
     """
-    Generate an image prompt based on the book title + summary and return image URL.
-
-    Args:
-        title: Book title
-        summary: Short or full summary of the book
-        size: "256x256", "512x512", "1024x1024"
-
-    Returns:
-        URL of the generated image (string)
+    Generate a book cover image using OpenAI's DALL-E model..
     """
     prompt = (
         f"Create a detailed, artistic illustration that could serve as a book cover. "

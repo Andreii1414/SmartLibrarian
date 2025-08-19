@@ -226,7 +226,7 @@ if prompt:
         if enable_img and chosen_title and full_summary:
             with st.spinner("Generating illustrative image…"):
                 try:
-                    img_url = generate_book_image(chosen_title, full_summary, size=img_size)
+                    img_url = generate_book_image(chosen_title, size=img_size)
                     st.image(img_url, caption=f"Illustration for '{chosen_title}'", use_container_width=True)
                 except Exception as e:
                     st.error(f"Image generation failed: {e}")
