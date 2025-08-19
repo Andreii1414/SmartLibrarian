@@ -212,8 +212,6 @@ class Recommender:
     def _get_summary_by_title_local(self, title: str) -> str:
         """
         Fetch the full summary for an exact book title from the local summary store.
-        :param title: Exact book title to look up.
-        :return: Full summary string if found, otherwise a default message.
         """
         return self.summary_store.get_by_title(title)
 
