@@ -33,7 +33,7 @@ class AppConfig:
         load_dotenv()
         self.book_json_path: str = os.getenv("BOOK_JSON_PATH", "book_summaries.json")
         self.tts_model: str = os.getenv("TTS_MODEL", "gpt-4o-mini-tts")
-        self.default_img_size: str = "1024x1792"
+        self.default_img_size: str = "1024x1024"
         self.rtc_cfg = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
         self.voice_sample_rate: int = 16000
         self.voice_channels: int = 1
@@ -142,7 +142,7 @@ def render_sidebar(cfg: AppConfig) -> SidebarControls:
         st.markdown("---")
         st.subheader("Image Generation")
         enable_img = st.checkbox("Enable image generation", value=False)
-        img_size = st.selectbox("Image size", ["1024x1792", "1024x1024", "1792x1024"], index=0)
+        img_size = st.selectbox("Image size", ["1024x1024", "1024x1792", "1792x1024"], index=0)
 
     return SidebarControls(
         top_k=top_k,
