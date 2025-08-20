@@ -4,16 +4,14 @@ from openai import OpenAI
 
 _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
-def generate_book_image(title: str, summary: str, size: str = "1024x1024") -> str:
+def generate_book_image(title: str, size: str = "1024x1024") -> str:
     """
     Generate a book cover image using OpenAI's DALL-E model.
     """
     prompt = (
-        f"Create a detailed, artistic illustration that could serve as a book cover. "
-        f"Book title: '{title}'. "
-        f"Summary: '{" ".join(summary.split()[:100])}'. "
-        f"Do not include any text on the image. "
-        "The image should be imaginative, evocative, and thematically representative of the story."
+        f"Create a book cover image for a book titled '{title}'. "
+        f"Do not include any text or logo on the image. "
+        "The image should be imaginative, evocative, thematically representative of the story, but without too much detail."
     )
 
     resp = _client.images.generate(
