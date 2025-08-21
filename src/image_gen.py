@@ -4,6 +4,7 @@ from openai import OpenAI
 
 _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
+
 def generate_book_image(title: str, size: str = "1024x1024") -> str:
     """
     Generate a book cover image using OpenAI's DALL-E model.

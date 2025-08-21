@@ -6,6 +6,7 @@ from openai import OpenAI
 
 _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
+
 def synthesize_speech(
     text: str,
     model: str | None = None,
@@ -20,9 +21,6 @@ def synthesize_speech(
     fmt = fmt or os.getenv("TTS_FORMAT", "mp3")
 
     resp = _client.audio.speech.create(
-        model=model,
-        voice=voice,
-        input=text,
-        response_format=fmt
+        model=model, voice=voice, input=text, response_format=fmt
     )
     return resp.read()

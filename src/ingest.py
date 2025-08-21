@@ -7,7 +7,7 @@ import time
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Sequence, Tuple
+from typing import List, Sequence
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -19,11 +19,13 @@ from openai import OpenAI, APIStatusError, RateLimitError, InternalServerError
 # Models / Records
 # -------------------------------
 
+
 @dataclass(frozen=True)
 class BookRecord:
     """
     Represents a book record with title and summary.
     """
+
     title: str
     summary: str
 
@@ -31,6 +33,7 @@ class BookRecord:
 # -------------------------------
 # IO / Loading
 # -------------------------------
+
 
 class JsonBookLoader:
     """Loads BookRecord objects from a JSON file."""
@@ -45,8 +48,14 @@ class JsonBookLoader:
         data = json.loads(path.read_text(encoding="utf-8"))
         records: List[BookRecord] = []
         for i, item in enumerate(data):
-            if not isinstance(item, dict) or "title" not in item or "summary" not in item:
-                raise ValueError(f"Invalid item at index {i}: expected keys 'title' and 'summary'.")
+            if (
+                not isinstance(item, dict)
+                or "title" not in item
+                or "summary" not in item
+            ):
+                raise ValueError(
+                    f"Invalid item at index {i}: expected keys 'title' and 'summary'."
+                )
             records.append(BookRecord(title=item["title"], summary=item["summary"]))
         return records
 
@@ -55,13 +64,16 @@ class JsonBookLoader:
 # Embeddings
 # -------------------------------
 
+
 class OpenAIEmbedder:
     """
     Thin wrapper for OpenAI embeddings with batching + simple retry.
     Default model: text-embedding-3-small.
     """
 
-    def __init__(self, api_key: str, model: str = "text-embedding-3-small", batch_size: int = 256):
+    def __init__(
+        self, api_key: str, model: str = "text-embedding-3-small", batch_size: int = 256
+    ):
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is required.")
         self.client = OpenAI(api_key=api_key)
@@ -74,7 +86,7 @@ class OpenAIEmbedder:
         """
         vectors: List[List[float]] = []
         for start in range(0, len(texts), self.batch_size):
-            chunk = list(texts[start:start + self.batch_size])
+            chunk = list(texts[start : start + self.batch_size])
             vectors.extend(self._embed_chunk(chunk))
         return vectors
 
@@ -85,7 +97,9 @@ class OpenAIEmbedder:
         backoff = 1.0
         for attempt in range(5):
             try:
-                resp = self.client.embeddings.create(model=self.model, input=list(texts))
+                resp = self.client.embeddings.create(
+                    model=self.model, input=list(texts)
+                )
                 # Ensure order by index
                 data_sorted = sorted(resp.data, key=lambda d: d.index)
                 return [d.embedding for d in data_sorted]
@@ -101,6 +115,7 @@ class OpenAIEmbedder:
 # -------------------------------
 # Vector Store (ChromaDB)
 # -------------------------------
+
 
 class ChromaRepository:
     """
@@ -146,7 +161,9 @@ class ChromaRepository:
             docs.append(rec.summary)
             metas.append({"title": rec.title})
 
-        self.collection.upsert(ids=ids, embeddings=list(embeddings), documents=docs, metadatas=metas)
+        self.collection.upsert(
+            ids=ids, embeddings=list(embeddings), documents=docs, metadatas=metas
+        )
         return len(ids)
 
     @staticmethod
@@ -168,6 +185,7 @@ class ChromaRepository:
 # -------------------------------
 # Ingest Pipeline
 # -------------------------------
+
 
 class IngestPipeline:
     """
@@ -201,17 +219,32 @@ class IngestPipeline:
 # CLI
 # -------------------------------
 
+
 def main():
     """
     Main entry point for the ingestion script.
     """
     load_dotenv()
 
-    parser = argparse.ArgumentParser(description="Ingest book summaries into ChromaDB (class-based).")
-    parser.add_argument("--file", type=str, default="book_summaries.json", help="Path to JSON file")
-    parser.add_argument("--collection", type=str, default=os.getenv("CHROMA_COLLECTION_NAME", "book_summaries"))
-    parser.add_argument("--persist-dir", type=str, default=os.getenv("CHROMA_PERSIST_DIRECTORY"))
-    parser.add_argument("--embed-model", type=str, default=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"))
+    parser = argparse.ArgumentParser(
+        description="Ingest book summaries into ChromaDB (class-based)."
+    )
+    parser.add_argument(
+        "--file", type=str, default="book_summaries.json", help="Path to JSON file"
+    )
+    parser.add_argument(
+        "--collection",
+        type=str,
+        default=os.getenv("CHROMA_COLLECTION_NAME", "book_summaries"),
+    )
+    parser.add_argument(
+        "--persist-dir", type=str, default=os.getenv("CHROMA_PERSIST_DIRECTORY")
+    )
+    parser.add_argument(
+        "--embed-model",
+        type=str,
+        default=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+    )
     parser.add_argument("--batch-size", type=int, default=256)
     args = parser.parse_args()
 
@@ -222,8 +255,12 @@ def main():
     path = Path(args.file)
     records = JsonBookLoader.load(path)
 
-    embedder = OpenAIEmbedder(api_key=api_key, model=args.embed_model, batch_size=args.batch_size)
-    repo = ChromaRepository(persist_dir=args.persist_dir, collection_name=args.collection, distance="cosine")
+    embedder = OpenAIEmbedder(
+        api_key=api_key, model=args.embed_model, batch_size=args.batch_size
+    )
+    repo = ChromaRepository(
+        persist_dir=args.persist_dir, collection_name=args.collection, distance="cosine"
+    )
 
     pipeline = IngestPipeline(embedder, repo)
     n = pipeline.run(records)
@@ -233,4 +270,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-#python src/ingest.py --file data/book_summaries.json
+# python src/ingest.py --file data/book_summaries.json

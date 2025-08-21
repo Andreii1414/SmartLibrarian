@@ -35,7 +35,7 @@ class ModerationClient:
         api_key = os.getenv("OPENAI_API_KEY", "") if config is None else config.api_key
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is required for moderation.")
-        self.model = (config.model if config else "omni-moderation-latest")
+        self.model = config.model if config else "omni-moderation-latest"
         self._client = OpenAI(api_key=api_key)
 
     def check(self, text: str) -> ModerationResult:
@@ -52,15 +52,20 @@ class ModerationClient:
             return ModerationResult(allowed=not flagged, reason=reason, raw=result)
         except APIError as e:
             # Fail-safe: block on API errors to avoid sending unmoderated content
-            return ModerationResult(allowed=False, reason=f"Moderation service error: {e}", raw=None)
+            return ModerationResult(
+                allowed=False, reason=f"Moderation service error: {e}", raw=None
+            )
         except Exception as e:
-            return ModerationResult(allowed=False, reason=f"Moderation unexpected error: {e}", raw=None)
+            return ModerationResult(
+                allowed=False, reason=f"Moderation unexpected error: {e}", raw=None
+            )
 
 
 # -------------------------
 # Backward-compatible wrapper
 # -------------------------
 _client_singleton: Optional[ModerationClient] = None
+
 
 def _get_client() -> ModerationClient:
     """
@@ -70,6 +75,7 @@ def _get_client() -> ModerationClient:
     if _client_singleton is None:
         _client_singleton = ModerationClient()
     return _client_singleton
+
 
 def moderate_text(text: str) -> Tuple[bool, str]:
     """

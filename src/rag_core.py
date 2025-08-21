@@ -24,6 +24,7 @@ CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
 
 _oa = OpenAI(api_key=OPENAI_API_KEY)
 
+
 # ---------- Data models ----------
 @dataclass(frozen=True)
 class RetrievedDoc:
@@ -31,11 +32,13 @@ class RetrievedDoc:
     distance: float
     summary: str
 
+
 @dataclass(frozen=True)
 class Recommendation:
     reply_text: str
     chosen_title: Optional[str]
     full_summary: Optional[str]
+
 
 # ---------- Chroma provider ----------
 class ChromaProvider:
@@ -43,7 +46,9 @@ class ChromaProvider:
     Creates and returns a Chroma persistent collection.
     """
 
-    def __init__(self, persist_dir: Optional[str], collection_name: str, space: str = "cosine"):
+    def __init__(
+        self, persist_dir: Optional[str], collection_name: str, space: str = "cosine"
+    ):
         self.persist_dir = persist_dir
         self.collection_name = collection_name
         self.space = space
@@ -62,9 +67,9 @@ class ChromaProvider:
         Get or create the Chroma collection with the specified name and metadata.
         """
         return self.client().get_or_create_collection(
-            name=self.collection_name,
-            metadata={"hnsw:space": self.space}
+            name=self.collection_name, metadata={"hnsw:space": self.space}
         )
+
 
 # ---------- Embeddings ----------
 class Embedder:
@@ -87,6 +92,7 @@ class Embedder:
 
     def embed_query(self, q: str) -> List[float]:
         return self.embed_texts([q])[0]
+
 
 # ---------- Retriever ----------
 class BookRetriever:
@@ -121,6 +127,7 @@ class BookRetriever:
             out.append(RetrievedDoc(title=title, distance=distance, summary=summary))
         return out
 
+
 # ---------- Local summary store ----------
 class SummaryStore:
     """
@@ -137,7 +144,11 @@ class SummaryStore:
         if self.path.exists():
             data = json.loads(self.path.read_text(encoding="utf-8"))
             if isinstance(data, list):
-                return {x["title"]: x["summary"] for x in data if "title" in x and "summary" in x}
+                return {
+                    x["title"]: x["summary"]
+                    for x in data
+                    if "title" in x and "summary" in x
+                }
         return {}
 
     def get_by_title(self, title: str) -> str:
@@ -146,31 +157,40 @@ class SummaryStore:
         """
         return self.load_map().get(title, "Summary not found for the exact title.")
 
+
 # ---------- Recommender with tool-calling ----------
 class Recommender:
     """
     Produces a conversational recommendation using OpenAI Chat and
     calls a local tool to fetch the full summary by exact title.
     """
-    def __init__(self, chat_model: str = CHAT_MODEL, summary_store: Optional[SummaryStore] = None):
+
+    def __init__(
+        self, chat_model: str = CHAT_MODEL, summary_store: Optional[SummaryStore] = None
+    ):
         self.chat_model = chat_model
         self.summary_store = summary_store or SummaryStore()
 
-        self.tools = [{
-            "type": "function",
-            "function": {
-                "name": "get_summary_by_title",
-                "description": "Return the full summary for an exact book title from a local store.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string", "description": "Exact book title to look up."}
+        self.tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_summary_by_title",
+                    "description": "Return the full summary for an exact book title from a local store.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "Exact book title to look up.",
+                            }
+                        },
+                        "required": ["title"],
+                        "additionalProperties": False,
                     },
-                    "required": ["title"],
-                    "additionalProperties": False,
                 },
-            },
-        }]
+            }
+        ]
 
     @staticmethod
     def _context_from_retrieved(docs: Sequence[RetrievedDoc], limit: int = 3) -> str:
@@ -179,7 +199,9 @@ class Recommender:
         """
         lines = []
         for d in list(docs)[:limit]:
-            lines.append(f"- Title: {d.title}\n  Dist: {d.distance:.4f}\n  Summary: {d.summary}")
+            lines.append(
+                f"- Title: {d.title}\n  Dist: {d.distance:.4f}\n  Summary: {d.summary}"
+            )
         return "\n".join(lines) if lines else "(no context)"
 
     def _system_prompt(self) -> str:
@@ -199,7 +221,9 @@ class Recommender:
         """
         return (
             "User request: " + user_query + "\n\n"
-            "Retrieved candidates (from a local vector store):\n" + retrieved_context + "\n\n"
+            "Retrieved candidates (from a local vector store):\n"
+            + retrieved_context
+            + "\n\n"
             "Rules:\n"
             "- Prefer the closest thematic match (lower distance).\n"
             "- If multiple are close, pick the more accessible read.\n"
@@ -208,14 +232,15 @@ class Recommender:
             "- Then call the tool with the exact chosen title."
         )
 
-
     def _get_summary_by_title_local(self, title: str) -> str:
         """
         Fetch the full summary for an exact book title from the local summary store.
         """
         return self.summary_store.get_by_title(title)
 
-    def recommend(self, user_query: str, retrieved: Sequence[RetrievedDoc]) -> Recommendation:
+    def recommend(
+        self, user_query: str, retrieved: Sequence[RetrievedDoc]
+    ) -> Recommendation:
         """
         Generate a book recommendation based on the user's query and retrieved documents.
         """
@@ -253,13 +278,21 @@ class Recommender:
                         full_summary = self._get_summary_by_title_local(title)
                     break
 
-        return Recommendation(reply_text=assistant_text, chosen_title=chosen_title, full_summary=full_summary)
+        return Recommendation(
+            reply_text=assistant_text,
+            chosen_title=chosen_title,
+            full_summary=full_summary,
+        )
+
 
 # ---------- Backward-compatible functions ----------
 # Instantiate singletons once
-_provider = ChromaProvider(persist_dir=CHROMA_DIR, collection_name=COLLECTION_NAME, space="cosine")
+_provider = ChromaProvider(
+    persist_dir=CHROMA_DIR, collection_name=COLLECTION_NAME, space="cosine"
+)
 _embedder = Embedder(model=EMBED_MODEL)
 _retriever = BookRetriever(provider=_provider, embedder=_embedder)
+
 
 def retrieve_books(query: str, top_k: int = 5) -> List[Tuple[str, float, str]]:
     """
@@ -267,6 +300,7 @@ def retrieve_books(query: str, top_k: int = 5) -> List[Tuple[str, float, str]]:
     """
     docs = _retriever.retrieve(query, top_k=top_k)
     return [(d.title, d.distance, d.summary) for d in docs]
+
 
 def generate_recommendation(
     user_query: str,
@@ -276,7 +310,11 @@ def generate_recommendation(
     """
     Backward-compatible function to generate a book recommendation.
     """
-    docs = [RetrievedDoc(title=t, distance=dist, summary=s) for (t, dist, s) in retrieved]
-    recommender = Recommender(chat_model=CHAT_MODEL, summary_store=SummaryStore(json_path))
+    docs = [
+        RetrievedDoc(title=t, distance=dist, summary=s) for (t, dist, s) in retrieved
+    ]
+    recommender = Recommender(
+        chat_model=CHAT_MODEL, summary_store=SummaryStore(json_path)
+    )
     rec = recommender.recommend(user_query, docs)
     return rec.reply_text, rec.chosen_title, rec.full_summary
