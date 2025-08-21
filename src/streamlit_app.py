@@ -1,26 +1,21 @@
 from __future__ import annotations
 import os
-import io
-import wave
 import textwrap
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import List, Optional, Tuple
-
+from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
+
 
 # External services (already in your project)
 from rag_core import retrieve_books, generate_recommendation
 from moderation import moderate_text
 from tts import synthesize_speech
-from stt import transcribe_wav_bytes
 from image_gen import generate_book_image
 
-# Voice capture
-import av
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-
+import tempfile
+from openai import OpenAI
 
 # =========================
 # Config & Boot
@@ -34,9 +29,11 @@ class AppConfig:
         self.book_json_path: str = os.getenv("BOOK_JSON_PATH", "book_summaries.json")
         self.tts_model: str = os.getenv("TTS_MODEL", "gpt-4o-mini-tts")
         self.default_img_size: str = "1024x1024"
-        self.rtc_cfg = RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
         self.voice_sample_rate: int = 16000
         self.voice_channels: int = 1
+
+        self.asr_model: str = os.getenv("ASR_MODEL", "gpt-4o-transcribe")
+        self.asr_language: Optional[str] = os.getenv("ASR_LANGUAGE")
 
     @staticmethod
     def set_page() -> None:
@@ -74,35 +71,36 @@ class AppState:
 # =========================
 # Voice Utilities
 # =========================
-@dataclass
-class AudioCollector:
+def transcribe_upload(file, cfg: AppConfig) -> str:
     """
-    Collect raw PCM16 mono samples from incoming frames.
+    Transcribe an uploaded audio/video file using OpenAI's transcription API.
+    Accepts common formats (mp3, mp4, wav, m4a, webm, ogg, flac, aac, opus).
+    Returns plain text.
     """
-    frames: List[bytes]
+    client = OpenAI()
 
-    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
-        """
-        Callback to process incoming audio frames.
-        """
-        pcm = frame.to_ndarray(format="s16")
-        mono = pcm.mean(axis=0).astype("int16") if pcm.ndim == 2 else pcm.astype("int16")
-        self.frames.append(mono.tobytes())
-        return frame
+    # Write the uploaded bytes to a temp file so the SDK can read it
+    suffix = Path(file.name).suffix if file and file.name else ".bin"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file.getbuffer())
+        tmp_path = tmp.name
 
-
-def pcm16_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 1) -> bytes:
-    """
-    Wrap raw PCM 16-bit mono into a WAV container (in-memory).
-    """
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(2)  # 16-bit
-        wf.setframerate(sample_rate)
-        wf.writeframes(pcm_bytes)
-    return buf.getvalue()
-
+    try:
+        with open(tmp_path, "rb") as fh:
+            transcript = client.audio.transcriptions.create(
+                model=cfg.asr_model,
+                file=fh,
+                # Optional settings:
+                response_format="text",
+                language=cfg.asr_language if cfg.asr_language else None,
+            )
+        # The SDK returns a string when response_format="text"
+        return transcript if isinstance(transcript, str) else str(transcript)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
 
 # =========================
 # UI Widgets
@@ -130,7 +128,6 @@ def render_sidebar(cfg: AppConfig) -> SidebarControls:
 
         st.subheader("Voice mode (microphone)")
         enable_voice = st.checkbox("Enable Voice Mode", value=False, help="Speak to the chatbot using your mic.")
-        st.caption("Click START to record, STOP to finish, then press 'Transcribe last recording'.")
 
         st.markdown("---")
         st.subheader("Text-to-Speech (TTS)")
@@ -191,41 +188,35 @@ def main() -> None:
     controls = render_sidebar(cfg)
     render_history(state)
 
-    if controls.enable_voice:
-        st.info("Voice mode is ON. Use the built-in START/STOP buttons, then click **Transcribe last recording**.")
+    # ----- Voice mode -----
+    st.subheader("🎤 Upload audio/video for transcription")
+    uploaded = st.file_uploader(
+        "Drop an audio/video file (mp3, mp4, wav, m4a, webm, ogg, flac, aac, opus)",
+        type=["mp3", "mp4", "wav", "m4a", "webm", "ogg", "flac", "aac", "opus"],
+        accept_multiple_files=False,
+        help="After uploading, click Transcribe to convert speech to text and use it as your chat prompt."
+    )
 
-        collector = AudioCollector(frames=state.voice_frames)
-        webrtc_streamer(
-            key="bookbuddy-voice",
-            mode=WebRtcMode.SENDONLY,
-            rtc_configuration=cfg.rtc_cfg,
-            media_stream_constraints={"audio": True, "video": False},
-            audio_receiver_size=256,
-            audio_frame_callback=collector.recv,
-        )
+    if uploaded:
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            transcribe_clicked = st.button("Transcribe", type="primary")
+        with col2:
+            st.caption(f"Selected file: **{uploaded.name}**")
 
-        if st.button("Transcribe last recording"):
-            raw = b"".join(state.voice_frames)
-            state.voice_frames.clear()
-            if not raw:
-                st.warning("No audio captured. Please try recording again.")
-            else:
-                wav_bytes = pcm16_to_wav(raw, sample_rate=cfg.voice_sample_rate, channels=cfg.voice_channels)
-                with st.spinner("Transcribing…"):
-                    try:
-                        transcript = transcribe_wav_bytes(wav_bytes)
-                    except Exception as e:
-                        st.error(f"Transcription failed: {e}")
-                        transcript = ""
-                if transcript:
-                    st.toast(f"You said: {transcript}", icon="🗣️")
-                    state.voice_prompt = transcript
-                    st.rerun()
+        if transcribe_clicked:
+            with st.spinner("Transcribing…"):
+                try:
+                    transcript_text = transcribe_upload(uploaded, cfg)
+                    state.voice_prompt = transcript_text.strip()
+                    with st.expander("Show transcript"):
+                        st.write(transcript_text)
+                except Exception as e:
+                    st.error(f"Transcription failed: {e}")
 
     # ----- Chat input: prefer voice transcript if available -----
     voice_prompt = state.voice_prompt
     if voice_prompt:
-        # Consume it exactly once
         state.voice_prompt = None
     typed_prompt = st.chat_input("Tell me what you’re in the mood to read…")
     prompt = voice_prompt or typed_prompt
