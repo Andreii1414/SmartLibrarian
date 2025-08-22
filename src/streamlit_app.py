@@ -8,7 +8,6 @@ import streamlit as st
 from dotenv import load_dotenv
 
 
-# External services (already in your project)
 from rag_core import retrieve_books, generate_recommendation
 from moderation import moderate_text
 from tts import synthesize_speech
@@ -64,8 +63,24 @@ class AppState:
     def add_user(self, content: str) -> None:
         self.messages.append({"role": "user", "content": content})
 
-    def add_assistant(self, content: str) -> None:
-        self.messages.append({"role": "assistant", "content": content})
+    def add_assistant(
+        self,
+        content: str,
+        audio_bytes: Optional[bytes] = None,
+        audio_format: Optional[str] = None,
+        img_url: Optional[str] = None,
+        img_caption: Optional[str] = None,
+        retrieved: Optional[List[Tuple[str, float, str]]] = None,
+    ) -> None:
+        self.messages.append({
+            "role": "assistant",
+            "content": content,
+            "audio_bytes": audio_bytes,
+            "audio_format": audio_format,
+            "img_url": img_url,
+            "img_caption": img_caption,
+            "retrieved": retrieved,
+        })
 
 
 # =========================
@@ -154,24 +169,46 @@ def render_sidebar(cfg: AppConfig) -> SidebarControls:
 
 def render_history(state: AppState) -> None:
     """
-    Render the chat history from the application state.
+    Render the chat history from the application state, including audio, images, and retrieved candidates.
     """
     for msg in state.messages:
         with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-
-def render_retrieved(results: List[Tuple[str, float, str]]) -> None:
-    """
-    Render the retrieved book candidates in an expandable section.
-    """
-    with st.expander("Show retrieved candidates"):
-        if not results:
-            st.write("No candidates found. Try rephrasing, e.g., 'war and redemption', 'friendship and magic', 'dystopia and rebellion'.")
-        else:
-            for rank, (title, dist, summary) in enumerate(results, start=1):
-                st.markdown(f"**{rank}. {title}** — distance: `{dist:.4f}`")
-                st.write(textwrap.shorten(summary.replace("\n", " "), width=260, placeholder="…"))
+            # Split out full summary if present
+            content = msg["content"]
+            summary_marker = "\n\n**Full summary for _"
+            if summary_marker in content:
+                main_part, summary_part = content.split(summary_marker, 1)
+                st.markdown(main_part)
+                summary_title_end = summary_part.find("_:**\n")
+                if summary_title_end != -1:
+                    summary_title = summary_part[:summary_title_end]
+                    summary_text = summary_part[summary_title_end + 5 :]
+                    with st.expander(f"Full summary for {summary_title.strip()}"):
+                        st.markdown(summary_text)
+                else:
+                    st.markdown(summary_marker + summary_part)
+            else:
+                st.markdown(content)
+            if msg.get("retrieved"):
+                with st.expander("Show retrieved candidates"):
+                    results = msg["retrieved"]
+                    if not results:
+                        st.write("No candidates found. Try rephrasing, e.g., 'war and redemption', 'friendship and magic', 'dystopia and rebellion'.")
+                    else:
+                        for rank, (title, dist, summary) in enumerate(results, start=1):
+                            st.markdown(f"**{rank}. {title}** — distance: `{dist:.4f}`")
+                            st.write(textwrap.shorten(summary.replace("\n", " "), width=260, placeholder="…"))
+            if msg.get("audio_bytes"):
+                st.audio(msg["audio_bytes"], format=f"audio/{msg.get('audio_format','mp3')}")
+                st.download_button(
+                    label="Download audio",
+                    data=msg["audio_bytes"],
+                    file_name=f"bookbuddy_recommendation.{msg.get('audio_format','mp3')}",
+                    mime=f"audio/{msg.get('audio_format','mp3')}",
+                    type="secondary",
+                )
+            if msg.get("img_url"):
+                st.image(msg["img_url"], caption=msg.get("img_caption", ""), use_container_width=True)
 
 
 # =========================
@@ -186,46 +223,52 @@ def main() -> None:
     st.caption("Ask in natural English. Example: *I want a book about friendship and magic.*")
 
     controls = render_sidebar(cfg)
-    render_history(state)
 
     # ----- Voice mode -----
-    st.subheader("🎤 Upload audio/video for transcription")
-    uploaded = st.file_uploader(
-        "Drop an audio/video file (mp3, mp4, wav, m4a, webm, ogg, flac, aac, opus)",
-        type=["mp3", "mp4", "wav", "m4a", "webm", "ogg", "flac", "aac", "opus"],
-        accept_multiple_files=False,
-        help="After uploading, click Transcribe to convert speech to text and use it as your chat prompt."
-    )
+    if controls.enable_voice:
+        st.subheader("🎤 Upload audio/video for transcription")
+        uploaded = st.file_uploader(
+            "Drop an audio/video file (mp3, mp4, wav, m4a, webm, ogg, flac, aac, opus)",
+            type=["mp3", "mp4", "wav", "m4a", "webm", "ogg", "flac", "aac", "opus"],
+            accept_multiple_files=False,
+            help="After uploading, click Transcribe to convert speech to text and use it as your chat prompt."
+        )
 
-    if uploaded:
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            transcribe_clicked = st.button("Transcribe", type="primary")
-        with col2:
-            st.caption(f"Selected file: **{uploaded.name}**")
+        if uploaded:
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                transcribe_clicked = st.button("Transcribe", type="primary")
+            with col2:
+                st.caption(f"Selected file: **{uploaded.name}**")
 
-        if transcribe_clicked:
-            with st.spinner("Transcribing…"):
-                try:
-                    transcript_text = transcribe_upload(uploaded, cfg)
-                    state.voice_prompt = transcript_text.strip()
-                    with st.expander("Show transcript"):
-                        st.write(transcript_text)
-                except Exception as e:
-                    st.error(f"Transcription failed: {e}")
+            if transcribe_clicked:
+                with st.spinner("Transcribing…"):
+                    try:
+                        transcript_text = transcribe_upload(uploaded, cfg)
+                        state.voice_prompt = transcript_text.strip()
+                        with st.expander("Show transcript"):
+                            st.write(transcript_text)
+                    except Exception as e:
+                        st.error(f"Transcription failed: {e}")
 
-    # ----- Chat input: prefer voice transcript if available -----
+    # ----- Chat input -----
     voice_prompt = state.voice_prompt
     if voice_prompt:
         state.voice_prompt = None
     typed_prompt = st.chat_input("Tell me what you’re in the mood to read…")
     prompt = voice_prompt or typed_prompt
 
+    # Show chat history up to now (so user message appears immediately)
+    render_history(state)
+
     if prompt:
-        # Show user message
+        # Show user message immediately
         state.add_user(prompt)
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        st.rerun()
+
+    # If the last message is from the user, generate assistant reply
+    if state.messages and state.messages[-1]["role"] == "user":
+        prompt = state.messages[-1]["content"]
 
         # Moderation (block if flagged)
         try:
@@ -239,15 +282,11 @@ def main() -> None:
                 "Please rephrase your message respectfully and without offensive language."
             )
             state.add_assistant(reply)
-            with st.chat_message("assistant"):
-                st.markdown(reply)
-            st.stop()
+            st.rerun()
 
         # Retrieval
         with st.spinner("Searching the library…"):
             results = retrieve_books(prompt, top_k=controls.top_k)
-        state.last_results = results
-        render_retrieved(results)
 
         # Generation
         if results:
@@ -267,49 +306,43 @@ def main() -> None:
         if chosen_title and full_summary:
             final_msg += f"\n\n**Full summary for _{chosen_title}_:**\n{full_summary}"
 
-        # Assistant reply
-        state.add_assistant(final_msg)
-        with st.chat_message("assistant"):
-            st.markdown(final_msg)
+        # Prepare extras
+        audio_bytes = None
+        audio_format = controls.tts_format
+        if controls.enable_tts:
+            with st.spinner("Generating audio…"):
+                try:
+                    audio_bytes = synthesize_speech(
+                        final_msg,
+                        model=cfg.tts_model,
+                        voice=controls.tts_voice,
+                        fmt=audio_format,
+                    )
+                except Exception as e:
+                    st.error(f"TTS failed: {e}")
+                    audio_bytes = None
 
-            # Optional TTS
-            audio_bytes = None
-            if controls.enable_tts:
-                with st.spinner("Generating audio…"):
-                    try:
-                        audio_bytes = synthesize_speech(
-                            final_msg,
-                            model=cfg.tts_model,
-                            voice=controls.tts_voice,
-                            fmt=controls.tts_format,
-                        )
-                    except Exception as e:
-                        st.error(f"TTS failed: {e}")
-            if audio_bytes:
-                state.last_audio = audio_bytes
-                st.audio(audio_bytes, format=f"audio/{controls.tts_format}")
-                st.download_button(
-                    label="Download audio",
-                    data=audio_bytes,
-                    file_name=f"bookbuddy_recommendation.{controls.tts_format}",
-                    mime=f"audio/{controls.tts_format}",
-                    type="secondary",
-                )
+        img_url = None
+        img_caption = None
+        if controls.enable_img and chosen_title:
+            with st.spinner("Generating illustrative image…"):
+                try:
+                    img_url = generate_book_image(chosen_title, size=controls.img_size)
+                    img_caption = f"Illustration for '{chosen_title}'"
+                except Exception as e:
+                    st.error(f"Image generation failed: {e}")
+                    img_url = None
 
-            # Optional Image Gen (requires title)
-            if controls.enable_img and chosen_title:
-                with st.spinner("Generating illustrative image…"):
-                    try:
-                        img_url = generate_book_image(chosen_title, size=controls.img_size)
-                        st.image(img_url, caption=f"Illustration for '{chosen_title}'", use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Image generation failed: {e}")
-
-    # Rerender persisted panels on sidebar changes
-    if not prompt and state.last_results:
-        render_retrieved(state.last_results)
-    if not prompt and state.last_audio and st.sidebar.checkbox("Show last audio player", value=False):
-        st.audio(state.last_audio)
+        # Store everything in state
+        state.add_assistant(
+            final_msg,
+            audio_bytes=audio_bytes,
+            audio_format=audio_format if audio_bytes else None,
+            img_url=img_url,
+            img_caption=img_caption,
+            retrieved=results,
+        )
+        st.rerun()
 
 
 if __name__ == "__main__":
