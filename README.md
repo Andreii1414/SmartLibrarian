@@ -13,6 +13,9 @@ SmartLibrarian is an AI-powered book assistant that provides book recommendation
 
 ---
 
+![Example Image2](data/example2.png)
+![Example Image](data/example.png)
+
 ## 1. Using Streamlit (All-in-one UI)
 
 ### Prerequisites
