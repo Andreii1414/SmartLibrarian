@@ -39,20 +39,6 @@ function Sidebar({ settings, setSettings }) {
         </div>
       </div>
       <div className="sidebar-section">
-        <b>Voice mode (microphone)</b>
-        <div>
-          <label className="styled-checkbox-label">
-            <input
-              type="checkbox"
-              className="styled-checkbox"
-              checked={settings.enable_voice}
-              onChange={e => setSettings(s => ({ ...s, enable_voice: e.target.checked }))}
-            />{" "}
-            Enable Voice Mode
-          </label>
-        </div>
-      </div>
-      <div className="sidebar-section">
         <b>Text-to-Speech (TTS)</b>
         <div>
           <label className="styled-checkbox-label">
@@ -316,7 +302,7 @@ function App() {
             <div ref={chatBottomRef} />
           </div>
           <form onSubmit={handlePromptSubmit} className="chat-input-form">
-            {settings.enable_voice && (
+
               <button
                 type="button"
                 className={`styled-btn mic-btn`}
@@ -335,7 +321,7 @@ function App() {
                   <span role="img" aria-label="mic">🎙️</span>
                 )}
               </button>
-            )}
+
             <textarea
               rows={2}
               className="chat-input"
