@@ -111,7 +111,7 @@ function Sidebar({ settings, setSettings }) {
 
 function ChatMessage({ msg }) {
   const isUser = msg.role === "user";
-  // Extract summary marker if present
+  
   let mainContent = msg.content;
   let showExpander = false;
   if (
@@ -120,7 +120,7 @@ function ChatMessage({ msg }) {
     msg.chosen_title &&
     mainContent.includes(`**Full summary for _${msg.chosen_title}_:**`)
   ) {
-    // Remove the summary from mainContent if it's already in expander
+   
     const marker = `**Full summary for _${msg.chosen_title}_:**`;
     const idx = mainContent.indexOf(marker);
     if (idx !== -1) {
