@@ -9,7 +9,7 @@ SmartLibrarian is an AI-powered book assistant that provides book recommendation
 - **Full Book Summaries**: Access detailed summaries for each recommended book.
 - **Voice Mode**: Use your microphone to interact with the assistant (speech-to-text and text-to-speech support).
 - **Image Generation**: Generate illustrative book covers for recommendations.
-- **Modern UI**: Choose between a simple Streamlit app or a feature-rich React frontend.
+- **Modern UI**: Choose between a simple Streamlit app or a React frontend.
 
 ---
 
